@@ -20,6 +20,10 @@ import-cards:
 viz:
 	python3 visualization/generate_plots.py
 
+# Generate EDA plots (requires database connection)
+eda:
+	python3 visualization/generate_eda_plots.py
+
 # Clean Python cache files
 clean:
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
