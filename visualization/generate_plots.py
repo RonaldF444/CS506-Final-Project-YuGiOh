@@ -155,7 +155,7 @@ def plot_cluster_analysis(cluster_data: dict) -> None:
     feature_names = cluster_data["features"]
     stats = cluster_data["feature_stats"]
 
-    cluster_labels = [f"Cluster {p['cluster']} (n={p['count']})" for p in profiles]
+    cluster_labels = [f"Cluster {p['cluster']} ({p['count']} cards)" for p in profiles]
     x = np.arange(len(feature_names))
     n_clusters = len(profiles)
     bar_width = 0.8 / n_clusters

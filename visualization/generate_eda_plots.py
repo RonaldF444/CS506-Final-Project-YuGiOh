@@ -34,11 +34,11 @@ def plot_price_trajectories() -> None:
     conn = get_db_connection()
     cur = conn.cursor()
 
-    # Pick cards with interesting stories: one big spike, one moderate, one flat
+    # Pick cards where tournament appearances clearly correlate with price spikes
     cards = [
-        ("Lacrima the Crimson Tears", "Large spike after tournament"),
-        ("Ash Blossom & Joyous Spring", "Established staple, stable price"),
-        ("Fiendsmith's Tract", "New meta card, volatile"),
+        ("Mementoal Tecuhtlica - Combined Creation", "$3.55 to $39.85 after March 2025 tournaments"),
+        ("Vanquish Soul Razen", "$3.62 to $29.10 after January 2026 tournaments"),
+        ("Secreterion Dragon", "$7.55 to $29.04 after tournament appearances"),
     ]
 
     fig, axes = plt.subplots(len(cards), 1, figsize=(12, 4 * len(cards)))
