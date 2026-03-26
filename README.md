@@ -1,4 +1,35 @@
 # Predicting Changes in Yu-Gi-Oh Card Price Based on Tournament Results
+
+## How to Build and Run
+
+### Prerequisites
+- Python 3.11+
+- Docker Desktop
+
+
+
+### Start the database
+```bash
+docker compose up -d
+```
+This starts a PostgreSQL container pre-loaded with all tournament, deck, and pricing data (~2.5M market snapshots, 22K deck profiles, 4K tournaments). First startup takes 1-2 minutes to load data.
+
+### Install dependencies and train
+```bash
+make install
+make train
+make viz
+make eda
+```
+
+### Run the frontend dashboard (optional)
+```bash
+cd frontend
+npm install
+npm run dev
+```
+Then open http://localhost:3000.
+
 ## Description
 This project takes a deeper look into the trading card game Yu-Gi-Oh and the card market built around it. When a deck archetype (A group of cards specifically designed to work together) performs well at a major tournament, demand for its best and rarest cards spikes, often causing significant price movement on online marketplaces like TCGPlayer. Similarly, archetypes which perform badly will often see significant dips in price.
 
@@ -27,3 +58,33 @@ This project will require two main categories of data: card pricing data, and to
 Within the United States as well as Europe, the most popular website to buy and sell Yu-Gi-Oh cards is the website TCGPlayer. Throughout the project this website will be utilised through web scraping as well as their API in order to collect daily market prices and price trends for cards that are featured in the top cut of tournaments. If the TCGPlayer website proves to be insufficient for data collection, existing kaggle data sets could be used to fill gaps. Potentially adding pricing data from other popular Yu-Gi-Oh card markets such as Ebay and Amazon could be a way to ensure that enough data is gathered.
 
 In order to gather the necessary data from tournaments we will be using YGOProDeck public API, which provides card metadata (name, type, archetype, number of copies) as well as tournament decklist information. This API will be used to collect top-cut decklists from major events such as YCS tournaments, Regional Championships, and National Championships.
+
+## Visualizations
+
+### Price Trajectories Around Tournaments
+![Price Trajectories](visualization/figures/price_trajectories.png)
+Daily prices for three cards with red lines at tournament dates, showing how different cards react to tournament appearances.
+
+### Target Distribution
+![Target Distribution](visualization/figures/target_distribution.png)
+Distribution of post-tournament price changes showing a heavy right skew (median 7.9%, mean 22.6%).
+
+### Feature Correlation Heatmap
+![Correlation Heatmap](visualization/figures/correlation_heatmap.png)
+Pearson correlation between features and the target, showing avg_prior_price_change (0.47) as the strongest linear predictor.
+
+### Feature Importance
+![Feature Importance](visualization/figures/feature_importance.png)
+XGBoost feature importance showing the top three features account for about 58% of model decisions.
+
+### Predicted vs Actual
+![Predicted vs Actual](visualization/figures/predicted_vs_actual.png)
+Test set predictions vs actuals showing low R-squared (0.04) but decent Spearman ranking correlation (0.41).
+
+### Backtest: Model vs Random Baseline
+![Backtest ROI](visualization/figures/backtest_roi.png)
+The model's top pick per tournament returns 74% ROI vs 16% for random selection.
+
+### KMeans Cluster Analysis
+![Cluster Analysis](visualization/figures/cluster_analysis.png)
+KMeans (k=5) clustering on card profiles reveals distinct archetypes including volatile spikers and meta staples.
