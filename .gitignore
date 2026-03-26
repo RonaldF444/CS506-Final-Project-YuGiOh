@@ -37,3 +37,14 @@ models/cluster_exploration.json
 
 # Claude config
 .claude/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/
+frontend/.env.local
+
+# Docker volumes
+pgdata/
+
+# Paper trades
+paper_trades.csv

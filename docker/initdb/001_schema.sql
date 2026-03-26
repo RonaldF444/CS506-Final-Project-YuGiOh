@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS idx_tournaments_format ON tournaments(format);
 CREATE TABLE IF NOT EXISTS deck_profiles (
     id SERIAL PRIMARY KEY,
     tournament_id INTEGER NOT NULL REFERENCES tournaments(id),
-    player_name TEXT NOT NULL,
+    player_name TEXT,
     deck_name TEXT,
     placement INTEGER,
     profile_url TEXT,
