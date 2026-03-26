@@ -83,7 +83,7 @@ Test set predictions vs actuals showing low R-squared (0.04) but decent Spearman
 
 ### Backtest: Model vs Random Baseline
 ![Backtest ROI](visualization/figures/backtest_roi.png)
-The model's top pick per tournament returns 74% ROI vs 16% for random selection.
+The model's top pick per tournament returns 83% ROI vs 8.7% for random selection, with win rates above 80% for Top 1-3 strategies.
 
 ### KMeans Cluster Analysis
 ![Cluster Analysis](visualization/figures/cluster_analysis.png)
