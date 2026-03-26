@@ -87,4 +87,4 @@ The model's top pick per tournament returns 74% ROI vs 16% for random selection.
 
 ### KMeans Cluster Analysis
 ![Cluster Analysis](visualization/figures/cluster_analysis.png)
-KMeans (k=5) clustering on card profiles reveals distinct archetypes including volatile spikers and meta staples.
+KMeans (k=5) clustering on card profiles based on 6 features (price, volatility, num_printings, tournament_count, top_cut_rate, avg_prior_price_change), standardized with z-score normalization. The elbow method was used to select k=5. Cluster 0 (276 cards) represents the average tournament card with no standout traits. Cluster 1 (22 cards) contains expensive established staples with many printings and frequent tournament appearances. Cluster 2 (20 cards) contains ultra-rare chase cards with extremely high prices but low tournament relevance. Cluster 3 (30 cards) is the most interesting — cheap cards averaging around $6 that spike +115% after tournament appearances, making them the primary target for prediction. Cluster 4 (8 cards) contains meta-defining pillars that appear in nearly every tournament with very high top-cut rates.
