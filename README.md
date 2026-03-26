@@ -63,7 +63,7 @@ In order to gather the necessary data from tournaments we will be using YGOProDe
 
 ### Price Trajectories Around Tournaments
 ![Price Trajectories](visualization/figures/price_trajectories.png)
-Daily prices for three cards with red lines at tournament dates, showing how different cards react to tournament appearances.
+Daily prices for three cards showing clear price spikes following tournament appearances. Mementoal Tecuhtlica went from $3.55 to $39.85 after March 2025 tournaments, Vanquish Soul Razen spiked from $3.62 to $29.10 in January 2026, and Secreterion Dragon climbed from $7.55 to $29.04.
 
 ### Target Distribution
 ![Target Distribution](visualization/figures/target_distribution.png)

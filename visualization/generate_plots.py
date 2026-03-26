@@ -55,10 +55,6 @@ def plot_predicted_vs_actual(report: dict) -> None:
     fig, ax = plt.subplots(figsize=(8, 8))
     ax.scatter(predicted, actual, alpha=0.15, s=10, c="steelblue")
 
-    line_min = pva["perfect_line"]["min"]
-    line_max = pva["perfect_line"]["max"]
-    ax.plot([line_min, line_max], [line_min, line_max], "r--", linewidth=1, label="Perfect prediction")
-
     ax.set_xlabel("Predicted Price Change (%)")
     ax.set_ylabel("Actual Price Change (%)")
     ax.set_title("Predicted vs Actual Price Change (Test Set)")
@@ -68,7 +64,6 @@ def plot_predicted_vs_actual(report: dict) -> None:
         transform=ax.transAxes, verticalalignment="top",
         fontsize=10, bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8),
     )
-    ax.legend()
     fig.tight_layout()
     fig.savefig(FIGURES_DIR / "predicted_vs_actual.png", dpi=150)
     plt.close(fig)

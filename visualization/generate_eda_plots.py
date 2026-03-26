@@ -80,34 +80,12 @@ def plot_price_trajectories() -> None:
 
         ax.plot(dates, prices, color='steelblue', linewidth=1.5)
 
-        # Get tournament dates for this card
-        cur.execute("""
-            SELECT DISTINCT t.event_date
-            FROM tournaments t
-            JOIN deck_profiles dp ON dp.tournament_id = t.id
-            JOIN LATERAL jsonb_array_elements_text(dp.main_deck::jsonb) AS card_id ON true
-            JOIN cards c ON c.id = card_id::int
-            WHERE c.name = %s AND t.format = 'TCG' AND t.player_count > 0
-            ORDER BY t.event_date
-        """, (card_name,))
-        tournament_dates = [r[0] for r in cur.fetchall()]
-
-        # Draw vertical lines for tournament appearances
-        for td in tournament_dates:
-            if dates[0] <= td <= dates[-1]:
-                ax.axvline(td, color='red', alpha=0.3, linewidth=0.8)
-
         # Label
         ax.set_title(f"{card_name} ({set_code}) - {description}")
         ax.set_ylabel("Market Price ($)")
         ax.xaxis.set_major_formatter(mdates.DateFormatter('%b %Y'))
         ax.xaxis.set_major_locator(mdates.MonthLocator(interval=2))
         plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
-
-        # Add legend for first plot only
-        if idx == 0:
-            ax.axvline(dates[0], color='red', alpha=0.3, linewidth=0.8, label='Tournament appearance')
-            ax.legend(loc='upper left')
 
     axes[-1].set_xlabel("Date")
     fig.tight_layout()
