@@ -16,9 +16,10 @@ from sklearn.cluster import KMeans
 
 from config import (
     MODEL_PATH, ML_SUMMARY_PATH, CS506_REPORT_PATH, CLUSTER_EXPLORATION_PATH,
-    RANDOM_STATE, TEST_SIZE, FEATURES, N_CLUSTERS, CLUSTER_FEATURES,
+    RANDOM_STATE, FEATURES, N_CLUSTERS, CLUSTER_FEATURES,
     MIN_CARD_PRICE,
 )
+from data_processing.extract import _build_cooccurrence_matrix, _apply_cooccurrence_features
 
 
 def _fit_card_clusters(
@@ -202,7 +203,12 @@ def train_model(df: pd.DataFrame) -> dict:
     train_cutoff = int(len(df) * 0.70)
     val_cutoff = int(len(df) * 0.85)
 
-    # Fit card clustering on training data (before creating X matrices)
+    train_cutoff_date_str = str(df.iloc[train_cutoff - 1]['event_date'])
+
+    # Build cooccurrence using only training-window decks
+    cooccurrence_matrix = _build_cooccurrence_matrix(before_date=train_cutoff_date_str)
+    df = _apply_cooccurrence_features(df, cooccurrence_matrix)
+
     card_clusters, cluster_scaler, cluster_kmeans, _ = _fit_card_clusters(df.iloc[:train_cutoff])
 
     # Assign clusters to all rows
@@ -398,6 +404,7 @@ def train_model(df: pd.DataFrame) -> dict:
     card_tournament_counts = train_df.groupby('card_name').size().to_dict()
     train_topped = (train_df['best_placement'] <= 8).astype(int)
     card_top_cut_rates = train_topped.groupby(train_df['card_name']).mean().to_dict()
+    card_avg_decks = train_df.groupby('card_name')['decks_with_card'].mean().to_dict()
 
     # Save model with metadata
     train_cutoff_date = str(train_dates.max())
@@ -416,9 +423,11 @@ def train_model(df: pd.DataFrame) -> dict:
         'card_avg_prior_price_changes': card_avg_prior_price_changes,
         'card_tournament_counts': card_tournament_counts,
         'card_top_cut_rates': card_top_cut_rates,
+        'card_avg_decks': card_avg_decks,
         'card_clusters': card_clusters,
         'cluster_scaler': cluster_scaler,
         'cluster_kmeans': cluster_kmeans,
+        'cooccurrence_matrix': cooccurrence_matrix,
     }, MODEL_PATH)
     print(f"\nModel saved to {MODEL_PATH}")
     print(f"Train cutoff date: {train_cutoff_date}")
