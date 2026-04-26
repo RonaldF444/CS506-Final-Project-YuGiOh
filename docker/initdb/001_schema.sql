@@ -34,9 +34,11 @@ CREATE INDEX IF NOT EXISTS idx_deck_profiles_tournament_id ON deck_profiles(tour
 
 CREATE TABLE IF NOT EXISTS cards (
     id BIGINT PRIMARY KEY,
-    name TEXT NOT NULL
+    name TEXT NOT NULL,
+    archetype TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);
+CREATE INDEX IF NOT EXISTS idx_cards_archetype ON cards(archetype);
 
 CREATE TABLE IF NOT EXISTS printings (
     id SERIAL PRIMARY KEY,
@@ -62,4 +64,72 @@ CREATE TABLE IF NOT EXISTS market_snapshots (
 CREATE INDEX IF NOT EXISTS idx_ms_product_id ON market_snapshots(product_id);
 CREATE INDEX IF NOT EXISTS idx_ms_time ON market_snapshots(time);
 CREATE INDEX IF NOT EXISTS idx_ms_product_time ON market_snapshots(product_id, time);
+
+CREATE TABLE IF NOT EXISTS banlists (
+    id SERIAL PRIMARY KEY,
+    effective_date DATE NOT NULL,
+    format TEXT NOT NULL DEFAULT 'TCG',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_banlists_date ON banlists(effective_date);
+
+CREATE TABLE IF NOT EXISTS banlist_entries (
+    banlist_id INTEGER NOT NULL REFERENCES banlists(id),
+    card_id BIGINT NOT NULL,
+    card_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    PRIMARY KEY (banlist_id, card_id)
+);
+CREATE INDEX IF NOT EXISTS idx_banlist_entries_card ON banlist_entries(card_name);
+
+CREATE TABLE IF NOT EXISTS paper_portfolio (
+    strategy_id TEXT PRIMARY KEY,
+    starting_cash NUMERIC(12,2) NOT NULL DEFAULT 50000.00,
+    current_cash NUMERIC(12,2) NOT NULL DEFAULT 50000.00,
+    hold_days INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS paper_positions (
+    id SERIAL PRIMARY KEY,
+    strategy_id TEXT NOT NULL,
+    tournament_id INTEGER NOT NULL,
+    card_name TEXT NOT NULL,
+    product_id INTEGER NOT NULL,
+    buy_price NUMERIC(10,2) NOT NULL,
+    predicted_change_pct NUMERIC(10,4) NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    bought_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tournament_date DATE NOT NULL,
+    expiry_date DATE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    sell_price NUMERIC(10,2),
+    sold_at TIMESTAMP,
+    sell_reason TEXT,
+    profit NUMERIC(10,2),
+    fees NUMERIC(10,2),
+    prediction_std_pct NUMERIC(10,4),
+    confidence NUMERIC(10,4),
+    sell_probability NUMERIC(10,4),
+    UNIQUE(strategy_id, tournament_id, product_id)
+);
+CREATE INDEX IF NOT EXISTS idx_paper_positions_strategy ON paper_positions(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_paper_positions_status ON paper_positions(status);
+
+CREATE TABLE IF NOT EXISTS paper_trades_log (
+    id SERIAL PRIMARY KEY,
+    strategy_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    tournament_id INTEGER,
+    card_name TEXT,
+    product_id INTEGER,
+    price NUMERIC(10,2),
+    quantity INTEGER,
+    predicted_change_pct NUMERIC(10,4),
+    reason TEXT,
+    cash_before NUMERIC(12,2),
+    cash_after NUMERIC(12,2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_paper_trades_log_strategy ON paper_trades_log(strategy_id);
 
