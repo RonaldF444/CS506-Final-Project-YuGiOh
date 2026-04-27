@@ -55,6 +55,9 @@ export default function Home() {
             <Link href="/clustering" className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">
               Clustering
             </Link>
+            <Link href="/cooccurrence" className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">
+              Co-occurrence
+            </Link>
             <Link href="/debug" className="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm">
               Debug
             </Link>
