@@ -1,4 +1,4 @@
-.PHONY: install train train-sell test viz clean
+.PHONY: install train train-sell paper-trade test viz clean
 
 # Install Python dependencies
 install:
@@ -11,6 +11,10 @@ train:
 # Train the XGBoost sell-timing model (requires buy model + DB)
 train-sell:
 	python3 scripts/train_sell_model.py
+
+# Replay paper trader with quarterly retraining (buy + sell)
+paper-trade:
+	python3 scripts/run_paper_trader.py --strategy-id default --reset
 
 # Run tests
 test:
