@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
 export async function GET(request: NextRequest) {
-  const strategy = request.nextUrl.searchParams.get('strategy') || '150d';
+  const strategy = request.nextUrl.searchParams.get('strategy') || 'default';
 
   try {
     // Get starting cash

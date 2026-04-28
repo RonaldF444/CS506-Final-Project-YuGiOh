@@ -106,6 +106,16 @@ def buy_for_tournament(
         expiry = t_date + timedelta(days=hold_days)
         confidence = max(0.0, 1.0 - (row['std_pct'] / max(abs(row['pred_pct']), 1.0))) if row['pred_pct'] != 0 else 0.0
 
+        # Skip if already holding this card from a recent weekend
+        cur.execute("""
+            SELECT 1 FROM paper_positions
+            WHERE strategy_id=%s AND product_id=%s AND status='open'
+              AND tournament_date >= %s
+            LIMIT 1
+        """, (strategy_id, int(row['product_id']), t_date - timedelta(days=7)))
+        if cur.fetchone():
+            continue
+
         try:
             cur.execute("""
                 INSERT INTO paper_positions (

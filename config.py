@@ -19,7 +19,7 @@ CLUSTER_EXPLORATION_PATH = 'models/cluster_exploration.json'
 N_CLUSTERS = 5
 RANDOM_STATE = 42
 MIN_CARD_APPEARANCES = 10
-MIN_CARD_PRICE = 3.00
+MIN_CARD_PRICE = 8.00
 
 # TCGPlayer Level 1-4 Marketplace Seller fees
 SELLER_COMMISSION_PCT = 0.1075

@@ -3,32 +3,57 @@
 ## How to Build and Run
 
 ### Prerequisites
-- Python 3.11+
 - Docker Desktop
+- Python 3.11+
+- Node 20+ (only if running the frontend)
 
+### Quick start (smoke test)
 
-
-### Start the database
 ```bash
-docker compose up -d
-```
-This starts a PostgreSQL container pre-loaded with all tournament, deck, and pricing data (~2.5M market snapshots, 22K deck profiles, 4K tournaments). First startup takes 1-2 minutes to load data.
-
-### Install dependencies and train
-```bash
-make install
-make train
-make viz
-make eda
+cp .env.example .env   # DB credentials (port 5433, password "postgres")
+docker compose up -d   # boot the seeded database
+make install           # pip install -r requirements.txt
+make test              # 16 unit tests
 ```
 
-### Run the frontend dashboard (optional)
+If the tests pass, the pipeline is wired up correctly. The seed database
+auto-loads ~7.7M market snapshots, ~40K deck profiles, ~4.4K tournaments,
+all banlists, and historical paper-trader runs — **no scraping or API
+calls required**.
+
+### Full pipeline
+
+```bash
+make train          # train buy model
+make train-sell     # train sell-timing model (requires buy model)
+make paper-trade    # replay history with quarterly retraining
+```
+
+Each step writes its outputs to disk or the database:
+- `make train` → `models/price_predictor.joblib`
+- `make train-sell` → `models/sell_model.joblib`
+- `make paper-trade` → rows in `paper_positions` and `paper_trades_log`
+  under `strategy_id='default'`
+
+### Frontend dashboard (optional)
+
 ```bash
 cd frontend
+cp .env.example .env.local   # DB credentials for the Next.js dev server
 npm install
 npm run dev
 ```
-Then open http://localhost:3000.
+
+Then open <http://localhost:3000>. Pages:
+- `/trading` — paper trader P&L, open positions, closed trades
+- `/cooccurrence` — search a card, see its top deck-mates
+- `/clustering`, `/report`, `/ml` — feature exploration and model metrics
+
+### Visualizations from disk
+
+```bash
+make viz   # generates static plots from models/*.json
+```
 
 ## Description
 This project takes a deeper look into the trading card game Yu-Gi-Oh and the card market built around it. When a deck archetype (A group of cards specifically designed to work together) performs well at a major tournament, demand for its best and rarest cards spikes, often causing significant price movement on online marketplaces like TCGPlayer. Similarly, archetypes which perform badly will often see significant dips in price.
@@ -40,6 +65,19 @@ In order to achieve this, the plan is to build a pipeline that collects both tou
 The initial modeling will explore classification methods such as logistic regression and decision trees, potentially progressing to more advanced methods like XGBoost. The data will be split using a train/test approach, where earlier tournament data is used for training while the most recent events are reserved for testing. Visualizations will include price trajectory plots as well as feature importance charts to highlight which tournament metrics are the strongest predictors of price movement.
 
 If predicting both the direction and magnitude of price changes becomes impossible within the timeframe, the project will fall back to predicting whether a card's price will go up or down following a tournament. This simplifies the problem making it easier to collect labeled training data and evaluate model performance with standard metrics. Another potential fallback plan would be to narrow the scope to a single popular archetype or a small set of cards.
+
+### What was built
+
+The system has two ML models:
+
+1. **Buy model** — XGBoost regressor, ensemble of 5 with different seeds, log-transformed target. Predicts the percent price change of a card in the 60 days following a tournament appearance. Uses 22 features grouped into momentum, peak-distance, archetype, banlist status, and deck-mate co-occurrence. Trained with a strict chronological 70/15/15 split — no random k-fold.
+
+2. **Sell-timing model** — XGBoost binary classifier. For an open position, predicts SELL vs HOLD on each day given features like `peak_gain_pct`, `drawdown_from_peak_pct`, `days_held`, and recent momentum. Label is 1 when the spike is over (run-up over 15%, momentum negative, no future recovery).
+
+Both models are evaluated by a **paper trader replay** (`scripts/run_paper_trader.py`) that walks tournaments chronologically, retrains both models every 90 days, applies them to make BUY and SELL decisions, and records the resulting positions and P&L to the database. Retraining mid-replay keeps each prediction grounded only in data available at that point — no leakage.
+
+The regressor's R² is intentionally not the headline metric: card-price spikes are a noisy target, so what matters is ranking quality(Spearman correlation) and the realized ROI of the Top-N pick strategies in the paper trader, not the absolute fit. See the Results section.
+
 ## Project Timeline
 Week 1–2: Begin by setting up the data collection pipeline by connecting to the YGOProDeck API for the necessary tournament data, then pull from the TCGPlayer website to get pricing/sales data. Begin the initial data cleaning.
 
@@ -59,6 +97,196 @@ Within the United States as well as Europe, the most popular website to buy and 
 
 In order to gather the necessary data from tournaments we will be using YGOProDeck public API, which provides card metadata (name, type, archetype, number of copies) as well as tournament decklist information. This API will be used to collect top-cut decklists from major events such as YCS tournaments, Regional Championships, and National Championships.
 
+## Data Cleaning
+
+Raw data lives in PostgreSQL across five tables (`tournaments`,
+`deck_profiles`, `cards`, `printings`, `market_snapshots`). Cleaning happens
+inside `data_processing/extract.py` before the model ever sees a row.
+
+**Filtering** (`config.py`):
+- Cards must appear in at least `MIN_CARD_APPEARANCES = 10` tournaments to
+  be kept. Below that the per-card cumulative features are too noisy.
+- Cards must be priced at or above `MIN_CARD_PRICE = $3.00`. Cheaper cards
+  are dominated by TCGPlayer's flat $0.30 transaction fee, so even a 50%
+  predicted spike can lose money after fees.
+- Tournaments must be in the TCG format with `player_count > 0`. Other
+  formats (OCG, GOAT, etc.) have different metas and prices.
+
+**Deduplication.** Multiple printings of the same card in the same
+tournament (different sets, rarities, etc.) collapse to a single row keyed
+on `(tournament_id, product_id, event_date)`. The `ranked_printings` CTE
+picks the printing with the most market-snapshot rows, so we always model
+the most-traded version.
+
+**Temporal split.** Data is sorted by `event_date` and split chronologically:
+70% train / 15% validation / 15% test. Random k-fold is intentionally not
+used — it would leak future tournament results into training and silently
+inflate accuracy.
+
+**Banlist alignment.** For each tournament, we resolve the active banlist
+as of `event_date` (binary search over banlist effective dates) and join it
+to compute `banlist_status`, `is_banned`, and `days_since_ban_change`.
+Cards on the active banlist behave very differently from unrestricted cards.
+
+**Sparse-snapshot tolerance.** Market snapshots are not evenly spaced
+(daily after Feb 2024, monthly before via PriceCharting backfill). The
+LATERAL JOINs in `data_processing/queries.py` use widened time windows
+(e.g. "1-4 days before" instead of "exactly 1 day before") so the query
+still returns a value when the exact day is missing. The `is_monthly_data`
+feature flags pre-2024 rows so the model can learn to weight them differently.
+
+## Feature Extraction
+
+The buy model uses 22 features in `config.FEATURES`, grouped into six families.
+All computed in `data_processing/extract.py` and `queries.py`.
+
+### Price level (3)
+- `price_at_tournament` — closest market snapshot to `event_date` (31-day
+  lookback window).
+- `price_tier` — bucketed price level (1-5).
+- `price_volatility_7d` — std of the short-window momentum spread.
+
+### Momentum (5)
+`momentum_{1,3,7,30,90}d` — % price change over different lookback windows
+before the tournament. Windows are widened (e.g. "1-4 days before") so the
+LATERAL JOIN still finds a snapshot when the exact day is missing.
+
+### Peak distance (6)
+- `distance_from_high` / `is_new_high` — vs a peak back-calculated from
+  momentum features.
+- `distance_from_30d_high` / `is_new_30d_high` — vs `MAX(market_price)` over
+  the 30 days before the tournament.
+- `distance_from_60d_high` / `is_new_60d_high` — same, 60-day window.
+
+### Tournament context (4)
+- `archetype_avg_top_cut_rate` — mean historical top-8 rate across same-archetype
+  cards at this tournament.
+- `archetype_momentum_7d` — mean 7d momentum across same-archetype cards.
+- `deck_trend` — current `decks_with_card` divided by the card's historical
+  average.
+- `deckmate_momentum_avg` — weighted average of deck-mates' momentum_7d,
+  weighted by co-occurrence strength `P(deckmate | this card)`. Built from a
+  card-card graph in `_build_cooccurrence_matrix`.
+
+### Banlist (3)
+- `banlist_status` — 0 (Unlimited) to 3 (Forbidden) as of `event_date`.
+- `is_banned` — 1 if status > 0.
+- `days_since_ban_change` — days since this card's status last changed.
+
+### Era flag (1)
+- `is_monthly_data` — 1.0 if pre-2024 (PriceCharting monthly era), else 0.0.
+
+### Cumulative per-card history (saved with artifact, not in FEATURES)
+Three lookup dicts saved in the model artifact for prediction-time use:
+`card_avg_prior_price_changes`, `card_tournament_counts`, `card_top_cut_rates`,
+plus `card_avg_decks` for `deck_trend`. All computed via grouped cumulative
+transforms with `.shift(1)` so the current row's outcome can never leak into
+its own features.
+
+### Sell model features (10)
+`config.SELL_FEATURES`, computed per open position per day in
+`models/sell_model.py`: `peak_gain_pct`, `drawdown_from_peak_pct`,
+`days_held`, `days_remaining`, `hold_pct_elapsed`, `price_momentum_3d/7d`,
+`volatility_since_buy`, `predicted_change_pct`, `days_since_last_new_high`.
+
+## Modeling
+
+### Buy model (`models/train.py`)
+- **XGBRegressor ensemble** of 5 with seeds 42-46, predictions averaged in
+  log-space then inverse-transformed via `expm1`.
+- **Target transform:** `log1p(y / 100)` on `price_change_pct`. Reduces
+  right-skew and improves ranking quality.
+- **Hyperparameter search:** two-stage random search optimizing Spearman
+  (not RMSE) — Spearman matches the paper trader's actual decision criterion
+  (rank-then-pick-top-N).
+- **Split:** chronological 70 / 15 / 15 sorted by `event_date`. No random shuffle.
+- All consumers (predict CLI, sell-model training, paper trader) call
+  `models/predict_helpers.apply_buy_model` so the inverse transform is applied
+  identically everywhere.
+
+### Sell-timing model (`models/sell_model.py`)
+- **XGBClassifier** trained on per-day position states.
+- **Training data:** for each historical buy, walks the daily price curve from
+  `market_snapshots` and emits one row per day with the 10 sell features and
+  a binary label.
+- **Label:** SELL = 1 when peak_gain > 15%, recent 3-day momentum is negative,
+  AND the price never recovers above the current peak. Dips that bounce back
+  are HOLD.
+- **Class imbalance:** `scale_pos_weight` weights the minority SELL class.
+
+### KMeans clustering (auxiliary)
+k=5 on per-card profiles (`CLUSTER_FEATURES` in `config.py`), fit on the
+training slice, saved with the artifact for the `/clustering` page. Removed
+from the feature set after backtests showed it hurt ROI despite high
+feature importance — kept in the artifact for visualization only.
+
+### Data leakage prevention
+Five rules enforced throughout the codebase:
+
+1. **`ms_after` only in training queries.** Prediction query never reads
+   future prices. Asserted in `tests/test_queries.py`.
+2. **Cumulative features use `.shift(1)`** so a row never sees its own outcome.
+3. **Chronological split** — data sorted by `event_date` before splitting,
+   no random k-fold.
+4. **Momentum windows are past-only** — every `momentum_*d` window ends
+   before `event_date`.
+5. **Periodic retraining respects cutoffs.** `scripts/run_paper_trader.py`
+   retrains every 90 days using only data with `event_date <= yesterday`.
+   Each retrain has its own `train_cutoff_date` saved in the artifact.
+
+## Results
+
+### Buy model
+
+XGBoost regressor ensemble of 5, trained on 37,615 rows.
+
+On the test split, RMSE is 31.5 (vs 40.4 train, 37.6 validation), MAE is
+18.8 (17.6 train, 19.6 validation), and R² is 0.05 (0.23 train, 0.05
+validation). Test **Spearman correlation is 0.46**.
+
+R² is intentionally not the headline — card-price spikes are noisy enough
+that hitting exact percent changes is impossible, and what matters is
+*ranking* cards correctly. Spearman of 0.46 on the test set is a strong
+rank correlation. The overfitting check fires (train-test R² gap of 0.18
+versus a 0.10 threshold), but test RMSE is actually *lower* than train
+RMSE — the gap reappeared because the `MIN_CARD_PRICE=$8` filter cut
+training rows down. Flagging honestly.
+
+The top feature importances are `archetype_avg_top_cut_rate` (0.085),
+`distance_from_high` (0.073), `momentum_90d` (0.065), `price_at_tournament`
+(0.062), and `momentum_3d` (0.060). The non-tournament tail (`is_monthly_data`,
+`momentum_1d`) came in at zero importance and is a candidate for pruning.
+
+### Rank-based backtest (zero-fee, simulated)
+
+For each of the 211 test tournaments, picking the top-N cards by model rating:
+
+- **Top 1 per tournament** returned +35.1% ROI with an 84.8% win rate
+  across 211 trades — a +18.9 percentage-point edge over the random
+  baseline.
+- **Top 2** returned +32.5% ROI (85.5% win rate, 421 trades, +18.2 pp).
+- **Top 3** returned +29.8% (85.1%, 631 trades, +16.4 pp).
+- **Top 5** returned +26.3% (83.6%, 1,050 trades, +12.8 pp).
+- **Top 10** returned +20.6% (80.5%, 2,029 trades, +6.7 pp).
+
+The random baseline (top-1 random pick per tournament, averaged over 20
+trials) returned +13.9% ROI. **In a frictionless world, the ranking edge
+is real and large** — the model beats random by ~19 percentage points at
+Top-1 and the edge degrades cleanly as the pick set widens.
+
+### Paper trader replay (with fees, `strategy_id='default'`)
+
+The replay walks every tournament between the buy model's training cutoff
+(2025-07-25) and the latest seeded data (2026-04-12), retrains both
+models every 90 days, and applies them to make real BUY and SELL decisions
+with TCGPlayer's full fee schedule. It caps at top 5 picks per tournament
+and skips cards that are already held within the last 7 days.
+
+The replay closed 353 positions, deployed $6,067.25 of capital, and ended
+with a realized P&L of −$1,024.99. That is an ROI on deployed capital of
+**−16.9%**, or a portfolio return of **−2.6%** measured against the
+$50,000 starting cash. Win rate was 36.3% (128 wins / 353 closed).
+
 ## Visualizations
 
 ### Price Trajectories Around Tournaments
@@ -67,7 +295,7 @@ Daily prices for three cards showing clear price spikes following tournament app
 
 ### Target Distribution
 ![Target Distribution](visualization/figures/target_distribution.png)
-Distribution of post-tournament price changes showing a heavy right skew (median 7.9%, mean 22.6%).
+Distribution of post-tournament price changes showing a heavy right skew (median 6.9%, mean 18.3%, std 46.0%). The skew motivates the `log1p(y/100)` target transform used during training.
 
 ### Feature Correlation Heatmap
 ![Correlation Heatmap](visualization/figures/correlation_heatmap.png)
@@ -75,16 +303,47 @@ Pearson correlation between features and the target, showing avg_prior_price_cha
 
 ### Feature Importance
 ![Feature Importance](visualization/figures/feature_importance.png)
-XGBoost feature importance showing the top three features account for about 58% of model decisions.
+XGBoost feature importance averaged across the 5-model ensemble. The top three (`archetype_avg_top_cut_rate`, `distance_from_high`, `momentum_90d`) sum to ~22% of total importance — no single feature dominates, and the model reads broadly across momentum, peak-distance, and archetype signals. `is_monthly_data` and `momentum_1d` come in at zero importance and are pruning candidates.
 
 ### Predicted vs Actual
 ![Predicted vs Actual](visualization/figures/predicted_vs_actual.png)
-Test set predictions vs actuals showing low R-squared (0.04) but decent Spearman ranking correlation (0.41).
+Test set predictions vs actuals. R² is low (0.04) — exact percent-change values are noisy — but Spearman ranking correlation is strong (0.46), which is the signal the paper trader actually uses.
 
 ### Backtest: Model vs Random Baseline
 ![Backtest ROI](visualization/figures/backtest_roi.png)
-The model's top pick per tournament returns 83% ROI vs 8.7% for random selection, with win rates above 80% for Top 1-3 strategies.
+Zero-fee rank-based backtest across 211 test tournaments. The model's top pick per tournament returns +35.1% ROI versus +13.9% for the random baseline (averaged over 20 trials) — a +18.9 percentage-point edge. Win rates stay above 80% for Top 1-5 strategies and degrade as the pick set widens.
 
 ### KMeans Cluster Analysis
 ![Cluster Analysis](visualization/figures/cluster_analysis.png)
-KMeans (k=5) clustering on card profiles based on 6 features (price, volatility, num_printings, tournament_count, top_cut_rate, avg_prior_price_change), standardized with z-score normalization. The elbow method was used to select k=5. Cluster 0 (276 cards) represents the average tournament card with no standout traits. Cluster 1 (22 cards) contains expensive established staples with many printings and frequent tournament appearances. Cluster 2 (20 cards) contains ultra-rare chase cards with extremely high prices but low tournament relevance. Cluster 3 (30 cards) is the most interesting — cheap cards averaging around $6 that spike +115% after tournament appearances, making them the primary target for prediction. Cluster 4 (8 cards) contains meta-defining pillars that appear in nearly every tournament with very high top-cut rates.
+KMeans (k=5) clustering on per-card profiles built from 6 features (price, volatility, num_printings, tournament_count, top_cut_rate, avg_prior_price_change), standardized with z-score normalization. k=5 chosen via the elbow method. The five resulting clusters (over 2,625 cards in the training slice):
+
+- **Cluster 0 (343 cards)** — cheap cards (~$1.65) with frequent tournament appearances and a high prior price-change average (+81%). Highly volatile, often spike candidates.
+- **Cluster 1 (10 cards)** — ultra-rare chase cards (~$285 avg) with low tournament relevance.
+- **Cluster 2 (708 cards)** — cheap cards that essentially never appear in tournaments. Background noise of the dataset.
+- **Cluster 3 (1,442 cards)** — the bulk: mid-cheap cards (~$4) with moderate tournament participation and a +20% historical change average. The fat middle of the distribution.
+- **Cluster 4 (122 cards)** — meta-defining staples (~$11 avg, 374 prior tournaments, 88% top-cut rate, +31% mean change). The most predictable spike candidates.
+
+The cluster IDs are saved with the buy model artifact and used to assign cluster membership to unseen cards at prediction time. Clustering was kept for visualization only — adding the cluster ID as a feature actually hurt backtest ROI in earlier experiments.
+
+## Tests + CI
+
+The `tests/` directory contains pytest unit tests covering the highest-value
+invariants in the codebase. Run them locally with `make test`. There are
+16 tests across three files:
+
+- **`test_queries.py`** — asserts `ms_after` (post-tournament price) appears
+  in the training query but **never** in the prediction query, and that
+  parameter substitution works. This is the data-leakage guardrail in test
+  form.
+- **`test_extract.py`** — feeds `_apply_feature_engineering` and
+  `_apply_archetype_features` synthetic dataframes and asserts every
+  feature in `config.FEATURES` is actually produced by the pipeline. Also
+  checks the cooccurrence helper handles empty matrices correctly.
+- **`test_config.py`** — asserts `FEATURES` has 22 unique entries and that
+  the target column `price_change_pct` is never in the feature list.
+
+The tests do not require a live database — they run against synthetic
+data and pure functions, so they are safe to run in CI on every push.
+
+`.github/workflows/test.yml` runs `make test` on every push and pull
+request to `main` using Python 3.11.

@@ -73,7 +73,7 @@ interface TradingData {
   lastUpdated: string;
 }
 
-const STRATEGIES = ['30d', '60d', '90d', '150d'];
+const STRATEGIES = ['default'];
 const REFRESH_INTERVAL = 60000;
 
 function formatDollars(n: number): string {
@@ -118,7 +118,7 @@ function sortIndicator(state: SortState, key: string): string {
 }
 
 export default function TradingPage() {
-  const [strategy, setStrategy] = useState('150d');
+  const [strategy, setStrategy] = useState('default');
   const [data, setData] = useState<TradingData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import pool from '@/lib/db';
 
 export async function GET(request: NextRequest) {
-  const strategy = request.nextUrl.searchParams.get('strategy') || '150d';
+  const strategy = request.nextUrl.searchParams.get('strategy') || 'default';
 
   try {
     // Portfolio summary
@@ -80,14 +80,12 @@ export async function GET(request: NextRequest) {
     const closed = closedResult.rows;
 
     const startingCash = parseFloat(portfolio.starting_cash);
-    const currentCash = parseFloat(portfolio.current_cash);
 
     // TCGPlayer fee constants (match config.py)
     const SELLER_COMMISSION_PCT = 0.1075;
     const TRANSACTION_FEE_PCT = 0.025;
     const TRANSACTION_FEE_FLAT = 0.30;
 
-    // Unrealized P&L = net proceeds after fees - cost basis
     const netSellAfterFees = (price: number, qty: number) => {
       const gross = price * qty;
       const fees = gross * (SELLER_COMMISSION_PCT + TRANSACTION_FEE_PCT) + TRANSACTION_FEE_FLAT * qty;
@@ -97,6 +95,7 @@ export async function GET(request: NextRequest) {
     // marketValue = net-of-fees proceeds if all open positions were sold now
     let marketValue = 0;
     let unrealizedPnl = 0;
+    let openCost = 0;
     for (const pos of open) {
       const currentPrice = pos.current_price ? parseFloat(pos.current_price) : parseFloat(pos.buy_price);
       const qty = parseInt(pos.quantity);
@@ -104,12 +103,17 @@ export async function GET(request: NextRequest) {
       const net = netSellAfterFees(currentPrice, qty);
       marketValue += net;
       unrealizedPnl += net - cost;
+      openCost += cost;
     }
 
     const realizedPnl = closed.reduce((sum: number, t: { profit: string | null }) =>
       sum + (t.profit ? parseFloat(t.profit) : 0), 0);
     const wins = closed.filter((t: { profit: string | null }) => t.profit && parseFloat(t.profit) > 0).length;
     const losses = closed.filter((t: { profit: string | null }) => t.profit && parseFloat(t.profit) <= 0).length;
+
+    // paper_portfolio.current_cash is not maintained by the replay script,
+    // so derive cash and total value from realized P&L + open-position cost.
+    const currentCash = startingCash + realizedPnl - openCost;
     const totalValue = currentCash + marketValue;
 
     const summary = {
