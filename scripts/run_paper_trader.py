@@ -257,7 +257,7 @@ def close_due_positions(
 
         cur.execute("""
             UPDATE paper_positions
-            SET status='closed', sell_price=%s, sold_at=%s, sell_reason=%s,
+            SET status='sold', sell_price=%s, sold_at=%s, sell_reason=%s,
                 profit=%s, fees=%s, sell_probability=%s
             WHERE id=%s
         """, (
@@ -316,10 +316,10 @@ def print_summary(conn, strategy_id: str) -> None:
     cur = conn.cursor()
     cur.execute("""
         SELECT
-            COUNT(*) FILTER (WHERE status='closed') AS closed,
-            COALESCE(SUM(profit) FILTER (WHERE status='closed'), 0) AS total_profit,
-            COALESCE(SUM(buy_price) FILTER (WHERE status='closed'), 0) AS total_bought,
-            COUNT(*) FILTER (WHERE status='closed' AND profit > 0) AS wins
+            COUNT(*) FILTER (WHERE status='sold') AS closed,
+            COALESCE(SUM(profit) FILTER (WHERE status='sold'), 0) AS total_profit,
+            COALESCE(SUM(buy_price) FILTER (WHERE status='sold'), 0) AS total_bought,
+            COUNT(*) FILTER (WHERE status='sold' AND profit > 0) AS wins
         FROM paper_positions
         WHERE strategy_id=%s
     """, (strategy_id,))
