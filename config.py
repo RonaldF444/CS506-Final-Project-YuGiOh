@@ -12,6 +12,7 @@ DB_CONFIG = {
 }
 
 MODEL_PATH = 'models/price_predictor.joblib'
+SELL_MODEL_PATH = 'models/sell_model.joblib'
 ML_SUMMARY_PATH = 'models/ml_summary.json'
 CS506_REPORT_PATH = 'models/cs506_report.json'
 CLUSTER_EXPLORATION_PATH = 'models/cluster_exploration.json'
@@ -19,6 +20,11 @@ N_CLUSTERS = 5
 RANDOM_STATE = 42
 MIN_CARD_APPEARANCES = 10
 MIN_CARD_PRICE = 3.00
+
+# TCGPlayer Level 1-4 Marketplace Seller fees
+SELLER_COMMISSION_PCT = 0.1075
+TRANSACTION_FEE_PCT = 0.025
+TRANSACTION_FEE_FLAT = 0.30
 
 FEATURES = [
     'price_at_tournament',
@@ -48,4 +54,17 @@ FEATURES = [
 CLUSTER_FEATURES = [
     'price_at_tournament', 'price_volatility_7d', 'num_printings',
     'card_tournament_count', 'top_cut_rate', 'avg_prior_price_change',
+]
+
+SELL_FEATURES = [
+    'peak_gain_pct',
+    'drawdown_from_peak_pct',
+    'days_held',
+    'days_remaining',
+    'hold_pct_elapsed',
+    'price_momentum_3d',
+    'price_momentum_7d',
+    'volatility_since_buy',
+    'predicted_change_pct',
+    'days_since_last_new_high',
 ]

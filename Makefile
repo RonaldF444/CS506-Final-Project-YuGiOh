@@ -1,12 +1,16 @@
-.PHONY: install train test viz clean
+.PHONY: install train train-sell test viz clean
 
 # Install Python dependencies
 install:
 	python3 -m pip install -r requirements.txt
 
-# Train the XGBoost model (requires PostgreSQL database connection)
+# Train the XGBoost buy model (requires PostgreSQL database connection)
 train:
 	python3 main.py
+
+# Train the XGBoost sell-timing model (requires buy model + DB)
+train-sell:
+	python3 scripts/train_sell_model.py
 
 # Run tests
 test:
