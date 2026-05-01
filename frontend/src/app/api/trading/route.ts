@@ -81,10 +81,11 @@ export async function GET(request: NextRequest) {
 
     const startingCash = parseFloat(portfolio.starting_cash);
 
-    // TCGPlayer fee constants (match config.py)
-    const SELLER_COMMISSION_PCT = 0.1075;
-    const TRANSACTION_FEE_PCT = 0.025;
-    const TRANSACTION_FEE_FLAT = 0.30;
+    // Fee constants match config.py; strategies ending in "_nofee" zero them out
+    const isNoFee = strategy.endsWith('_nofee');
+    const SELLER_COMMISSION_PCT = isNoFee ? 0 : 0.1075;
+    const TRANSACTION_FEE_PCT = isNoFee ? 0 : 0.025;
+    const TRANSACTION_FEE_FLAT = isNoFee ? 0 : 0.30;
 
     const netSellAfterFees = (price: number, qty: number) => {
       const gross = price * qty;

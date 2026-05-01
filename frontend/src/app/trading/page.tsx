@@ -73,7 +73,7 @@ interface TradingData {
   lastUpdated: string;
 }
 
-const STRATEGIES = ['default'];
+const STRATEGIES = ['default', 'default_nofee'];
 const REFRESH_INTERVAL = 60000;
 
 function formatDollars(n: number): string {

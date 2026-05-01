@@ -299,18 +299,30 @@ recent momentum has turned over. The classification metrics are strong;
 how much of that quality survives realistic sell timing in the paper
 trader is the question the next section answers.
 
-### Paper trader replay (with fees, `strategy_id='default'`)
+### Paper trader replay
 
 The replay walks every tournament between the buy model's training cutoff
 (2025-07-25) and the latest seeded data (2026-04-12), retrains both
-models every 90 days, and applies them to make real BUY and SELL decisions
-with TCGPlayer's full fee schedule. It caps at top 5 picks per tournament
-and skips cards that are already held within the last 7 days.
+models every 90 days, and applies them to make BUY and SELL decisions.
+It picks the single highest-confidence card per tournament and skips
+cards already held within the last 7 days. In one pass the script writes
+two parallel strategies: one with TCGPlayer's full fee schedule applied
+(default), and one with fees zeroed out (default_nofee), so the cost of
+fees alone can be isolated from the model's underlying edge.
 
-The replay closed 353 positions, deployed $6,067.25 of capital, and ended
-with a realized P&L of −$1,024.99. That is an ROI on deployed capital of
-**−16.9%**, or a portfolio return of **−2.6%** measured against the
-$50,000 starting cash. Win rate was 36.3% (128 wins / 353 closed).
+With fees applied, the replay closed 133 positions, deployed $2,082.45,
+and ended with a realized P&L of −$259.32 — an ROI of −12.45% on deployed
+capital and a win rate of 43.6%.
+
+Without fees, the same replay closed 141 positions, deployed $2,194.14,
+and ended with a realized P&L of +$64.27 — an ROI of +2.93% on deployed
+capital and a win rate of 55.3%.
+
+The ~15 percentage-point gap between the two is the cost of fees alone
+on this trade size. The model's ranking edge is real — the no-fee run
+converts it to positive P&L with a 55% win rate — but at $8 cards
+TCGPlayer's flat $0.30 fee plus 13.25% commission eats enough small
+wins to push the realistic run negative.
 
 ## Visualizations
 

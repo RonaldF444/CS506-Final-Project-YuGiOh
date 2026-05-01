@@ -51,8 +51,10 @@ def retrain_both(cutoff: date) -> tuple[dict, dict]:
     return load_models()
 
 
-def fee_adjusted_break_even(price: float) -> float:
-    return ((price + TRANSACTION_FEE_FLAT) / ((1 - FEE_RATE) * price) - 1) * 100
+def fee_adjusted_break_even(price: float, fee_rate: float, fee_flat: float) -> float:
+    if fee_rate == 0 and fee_flat == 0:
+        return 0.0
+    return ((price + fee_flat) / ((1 - fee_rate) * price) - 1) * 100
 
 
 def buy_for_tournament(
@@ -62,6 +64,8 @@ def buy_for_tournament(
     strategy_id: str,
     top_n: int,
     hold_days: int,
+    fee_rate: float,
+    fee_flat: float,
 ) -> int:
     feature_columns = buy_artifact['features']
     df = get_prediction_data(
@@ -88,7 +92,9 @@ def buy_for_tournament(
     df = df.copy()
     df['pred_pct'] = preds
     df['std_pct'] = stds
-    df['break_even_pct'] = df['price_at_tournament'].apply(fee_adjusted_break_even)
+    df['break_even_pct'] = df['price_at_tournament'].apply(
+        lambda p: fee_adjusted_break_even(p, fee_rate, fee_flat)
+    )
     df['clears_fees'] = df['pred_pct'] > df['break_even_pct']
 
     eligible = df[
@@ -204,6 +210,8 @@ def close_due_positions(
     sell_artifact: dict,
     strategy_id: str,
     as_of: date,
+    fee_rate: float,
+    fee_flat: float,
 ) -> int:
     cur = conn.cursor()
     cur.execute("""
@@ -262,7 +270,7 @@ def close_due_positions(
             sell_reason = 'expiry'
 
         gross = sell_price - float(buy_price)
-        fees = sell_price * FEE_RATE + TRANSACTION_FEE_FLAT
+        fees = sell_price * fee_rate + fee_flat
         profit = gross - fees
 
         cur.execute("""
@@ -352,7 +360,9 @@ def print_summary(conn, strategy_id: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description="Replay paper trader with periodic retraining")
-    parser.add_argument('--strategy-id', required=True)
+    parser.add_argument('--strategy-id', default='default',
+                        help="Base strategy id; the script writes both '{base}' (with fees) "
+                             "and '{base}_nofee' (zero-fee) under this name")
     parser.add_argument('--start-date', type=str, default=None,
                         help="YYYY-MM-DD; defaults to current model's train_cutoff_date")
     parser.add_argument('--end-date', type=str, default=None,
@@ -362,7 +372,7 @@ def main():
     parser.add_argument('--starting-cash', type=float, default=50000.0)
     parser.add_argument('--hold-days', type=int, default=60)
     parser.add_argument('--reset', action='store_true',
-                        help="Wipe paper_* rows for this strategy_id before starting")
+                        help="Wipe paper_* rows for both strategies before starting")
     args = parser.parse_args()
 
     buy_artifact, sell_artifact = load_models()
@@ -371,17 +381,24 @@ def main():
              else date.fromisoformat(str(buy_artifact['train_cutoff_date'])[:10]))
     end = date.fromisoformat(args.end_date) if args.end_date else date.today()
 
+    # Two strategies in one pass; same model, same picks (modulo fee filter), different P&L math
+    strategies = [
+        (args.strategy_id, FEE_RATE, TRANSACTION_FEE_FLAT),
+        (f"{args.strategy_id}_nofee", 0.0, 0.0),
+    ]
+
     print(f"Replay window: {start} → {end}")
     print(f"Retrain every: {args.retrain_interval_days} days")
-    print(f"Strategy:      {args.strategy_id}")
+    print(f"Strategies:    {[s[0] for s in strategies]}")
 
     conn = get_db_connection()
     try:
-        if args.reset:
-            print("Wiping prior rows for this strategy_id...")
-            reset_strategy(conn, args.strategy_id)
+        for strat_id, _, _ in strategies:
+            if args.reset:
+                print(f"Wiping prior rows for {strat_id}...")
+                reset_strategy(conn, strat_id)
+            init_portfolio(conn, strat_id, args.starting_cash, args.hold_days)
 
-        init_portfolio(conn, args.strategy_id, args.starting_cash, args.hold_days)
         tournaments = fetch_tournaments(conn, start, end)
         print(f"Found {len(tournaments)} tournaments to replay")
 
@@ -392,16 +409,21 @@ def main():
                 buy_artifact, sell_artifact = retrain_both(cutoff)
                 last_retrain = t_date
 
-            bought = buy_for_tournament(
-                conn, buy_artifact, t_id, args.strategy_id,
-                args.top_n_per_tournament, args.hold_days,
-            )
-            closed = close_due_positions(conn, sell_artifact, args.strategy_id, t_date)
-            if bought or closed:
-                print(f"  {t_date} t={t_id}: bought={bought} closed={closed}")
+            for strat_id, fee_rate, fee_flat in strategies:
+                bought = buy_for_tournament(
+                    conn, buy_artifact, t_id, strat_id,
+                    args.top_n_per_tournament, args.hold_days,
+                    fee_rate, fee_flat,
+                )
+                closed = close_due_positions(
+                    conn, sell_artifact, strat_id, t_date, fee_rate, fee_flat,
+                )
+                if bought or closed:
+                    print(f"  {t_date} t={t_id} [{strat_id}]: bought={bought} closed={closed}")
 
-        close_due_positions(conn, sell_artifact, args.strategy_id, end)
-        print_summary(conn, args.strategy_id)
+        for strat_id, fee_rate, fee_flat in strategies:
+            close_due_positions(conn, sell_artifact, strat_id, end, fee_rate, fee_flat)
+            print_summary(conn, strat_id)
     finally:
         conn.close()
 

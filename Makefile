@@ -14,7 +14,7 @@ train-sell:
 
 # Replay paper trader with quarterly retraining (buy + sell)
 paper-trade:
-	python3 scripts/run_paper_trader.py --strategy-id default --reset
+	python3 scripts/run_paper_trader.py --strategy-id default --top-n-per-tournament 1 --reset
 
 # Run tests
 test:
