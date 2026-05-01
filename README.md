@@ -1,5 +1,9 @@
 # Predicting Changes in Yu-Gi-Oh Card Price Based on Tournament Results
 
+## Video Walkthrough
+
+[![Yu-Gi-Oh Card Price Predictor — CS506 Final Project](https://img.youtube.com/vi/LH5NC1mjB6k/maxresdefault.jpg)](https://youtu.be/LH5NC1mjB6k)
+
 ## How to Build and Run
 
 ### Prerequisites
@@ -7,7 +11,7 @@
 - Python 3.11+
 - Node 20+ (only if running the frontend)
 
-### Quick start (smoke test)
+### Quick start
 
 ```bash
 cp .env.example .env   # DB credentials (port 5433, password "postgres")
