@@ -242,15 +242,21 @@ XGBoost regressor ensemble of 5, trained on 37,615 rows.
 
 On the test split, RMSE is 31.5 (vs 40.4 train, 37.6 validation), MAE is
 18.8 (17.6 train, 19.6 validation), and R² is 0.05 (0.23 train, 0.05
-validation). Test **Spearman correlation is 0.46**.
+validation). Test **Spearman correlation is 0.30** (0.43 train, 0.24
+validation), with average per-tournament Spearman of 0.28.
 
 R² is intentionally not the headline — card-price spikes are noisy enough
 that hitting exact percent changes is impossible, and what matters is
-*ranking* cards correctly. Spearman of 0.46 on the test set is a strong
-rank correlation. The overfitting check fires (train-test R² gap of 0.18
-versus a 0.10 threshold), but test RMSE is actually *lower* than train
-RMSE — the gap reappeared because the `MIN_CARD_PRICE=$8` filter cut
-training rows down. Flagging honestly.
+*ranking* cards correctly. Test Spearman of 0.30 is a moderate rank
+correlation, and the rank-based backtest below confirms the ranking has
+real economic value. The overfitting check fires (train-test R² gap of
+0.18 versus a 0.10 threshold), but test RMSE is actually *lower* than
+train RMSE — the gap reappeared because the `MIN_CARD_PRICE=$8` filter
+cut training rows down. Flagging honestly.
+
+Direction-of-change accuracy on the test set is **72.4%** — the model
+correctly predicts whether a card will go up or down nearly three-quarters
+of the time, even when the magnitude is off.
 
 The top feature importances are `archetype_avg_top_cut_rate` (0.085),
 `distance_from_high` (0.073), `momentum_90d` (0.065), `price_at_tournament`
@@ -259,20 +265,39 @@ The top feature importances are `archetype_avg_top_cut_rate` (0.085),
 
 ### Rank-based backtest (zero-fee, simulated)
 
-For each of the 211 test tournaments, picking the top-N cards by model rating:
+For each of the 246 test tournaments, picking the top-N cards by model rating:
 
-- **Top 1 per tournament** returned +35.1% ROI with an 84.8% win rate
-  across 211 trades — a +18.9 percentage-point edge over the random
+- **Top 1 per tournament** returned +29.9% ROI with an 86.2% win rate
+  across 246 trades — a +14.7 percentage-point edge over the random
   baseline.
-- **Top 2** returned +32.5% ROI (85.5% win rate, 421 trades, +18.2 pp).
-- **Top 3** returned +29.8% (85.1%, 631 trades, +16.4 pp).
-- **Top 5** returned +26.3% (83.6%, 1,050 trades, +12.8 pp).
-- **Top 10** returned +20.6% (80.5%, 2,029 trades, +6.7 pp).
+- **Top 2** returned +25.6% ROI (84.5% win rate, 491 trades, +11.7 pp).
+- **Top 3** returned +25.0% (83.0%, 735 trades, +10.6 pp).
+- **Top 5** returned +23.8% (81.2%, 1,223 trades, +9.4 pp).
+- **Top 10** returned +20.4% (78.7%, 2,397 trades, +6.4 pp).
 
 The random baseline (top-1 random pick per tournament, averaged over 20
-trials) returned +13.9% ROI. **In a frictionless world, the ranking edge
-is real and large** — the model beats random by ~19 percentage points at
-Top-1 and the edge degrades cleanly as the pick set widens.
+trials) returned +13.0% ROI. **In a frictionless world, the ranking edge
+is real** — the model beats random by ~15 percentage points at Top-1 and
+the edge degrades cleanly as the pick set widens, which is the expected
+shape of a working ranker.
+
+### Sell-timing model
+
+The sell classifier was trained on **2.39 million day-rows** generated from
+37,615 historical buy positions, with class distribution 8.2% SELL /
+91.8% HOLD. On the held-out test set (357,789 day-rows) at the default
+0.5 probability threshold:
+
+- **Overall accuracy: 99%**
+- HOLD class: precision 1.00 / recall 0.99 / F1 0.99
+- SELL class: precision 0.87 / recall 1.00 / F1 0.93
+
+The top three feature importances are `peak_gain_pct` (0.43),
+`price_momentum_3d` (0.39), and `predicted_change_pct` (0.10) — i.e. the
+classifier learns to fire SELL when a position is well into profit AND
+recent momentum has turned over. The classification metrics are strong;
+how much of that quality survives realistic sell timing in the paper
+trader is the question the next section answers.
 
 ### Paper trader replay (with fees, `strategy_id='default'`)
 
@@ -307,11 +332,11 @@ XGBoost feature importance averaged across the 5-model ensemble. The top three (
 
 ### Predicted vs Actual
 ![Predicted vs Actual](visualization/figures/predicted_vs_actual.png)
-Test set predictions vs actuals. R² is low (0.04) — exact percent-change values are noisy — but Spearman ranking correlation is strong (0.46), which is the signal the paper trader actually uses.
+Test set predictions vs actuals (5,643 samples). R² is low (0.05) — exact percent-change values are noisy — but Spearman ranking correlation is moderate (0.30), and the rank-based backtest shows that ranking translates into real economic edge.
 
 ### Backtest: Model vs Random Baseline
 ![Backtest ROI](visualization/figures/backtest_roi.png)
-Zero-fee rank-based backtest across 211 test tournaments. The model's top pick per tournament returns +35.1% ROI versus +13.9% for the random baseline (averaged over 20 trials) — a +18.9 percentage-point edge. Win rates stay above 80% for Top 1-5 strategies and degrade as the pick set widens.
+Zero-fee rank-based backtest across 246 test tournaments. The model's top pick per tournament returns +29.9% ROI versus +13.0% for the random baseline (averaged over 20 trials) — a +14.7 percentage-point edge. Win rates stay above 78% for Top 1-10 strategies and degrade cleanly as the pick set widens, the expected shape of a working ranker.
 
 ### KMeans Cluster Analysis
 ![Cluster Analysis](visualization/figures/cluster_analysis.png)
